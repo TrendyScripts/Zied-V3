@@ -1,0 +1,296 @@
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+--// CONFIGURATION SETTINGS \\--
+local Config = {
+    UI = {
+        Title = "Zied V3",
+        NeonColor = Color3.fromRGB(255, 255, 0),
+        Font = Enum.Font.FredokaOne
+    },
+    Effects = {
+        BlurSize = 20,
+        Bloom = {Intensity = 1.8, Size = 30, Threshold = 0.7},
+        ColorCorrection = {Saturation = -0.2, TintColor = Color3.new(1, 1, 0.7)}
+    },
+    Camlock = {
+        Smoothness = 5, -- Higher values = faster smoothing
+        MaxDistance = 1000,
+        Prediction = {X = 0.12, Y = 0.12, Z = 0.12},  -- XYZ prediction settings
+        AutoUnlock = true
+    }
+}
+
+--// APPLY CINEMATIC EFFECTS \\--
+local blur = Instance.new("BlurEffect")
+blur.Size = Config.Effects.BlurSize
+blur.Parent = Lighting
+
+local bloom = Instance.new("BloomEffect")
+bloom.Intensity, bloom.Size, bloom.Threshold = Config.Effects.Bloom.Intensity, Config.Effects.Bloom.Size, Config.Effects.Bloom.Threshold
+bloom.Parent = Lighting
+
+local colorCorrection = Instance.new("ColorCorrectionEffect")
+colorCorrection.Saturation = Config.Effects.ColorCorrection.Saturation
+colorCorrection.TintColor = Config.Effects.ColorCorrection.TintColor
+colorCorrection.Parent = Lighting
+
+--// CREATE GUI (Loading Intro) \\--
+local loadingGui = Instance.new("ScreenGui", game.CoreGui)
+loadingGui.ResetOnSpawn = false
+
+local titleLabel = Instance.new("TextLabel", loadingGui)
+titleLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+titleLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+titleLabel.Size = UDim2.new(0, 400, 0, 100)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = Config.UI.Title
+titleLabel.Font = Config.UI.Font
+titleLabel.TextColor3 = Config.UI.NeonColor
+titleLabel.TextSize = 100
+titleLabel.TextStrokeTransparency = 0
+titleLabel.TextStrokeColor3 = Color3.fromRGB(255, 215, 0)
+
+local introSound = Instance.new("Sound", titleLabel)
+introSound.SoundId = "rbxassetid://1837635135"
+introSound.Volume = 2
+introSound:Play()
+
+TweenService:Create(titleLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 500, 0, 120),
+    TextTransparency = 0.2
+}):Play()
+
+task.wait(0.5)
+
+TweenService:Create(titleLabel, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, -1, true), {
+    TextSize = 110
+}):Play()
+
+task.wait(1.5)
+
+TweenService:Create(titleLabel, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
+
+task.wait(1)
+
+loadingGui:Destroy()
+if blur then blur:Destroy() end
+if bloom then bloom:Destroy() end
+if colorCorrection then colorCorrection:Destroy() end
+
+print("Intro completed. Zied V3 is now running!")
+
+--// CAMLOCK SYSTEM \\--
+local LockTarget = nil
+local CamlockEnabled = false
+local currentTargetChar = nil  -- Store the currently highlighted target's character
+
+local function GetTarget()
+    local closest = nil
+    local shortestDist = math.huge
+    local camLook = Camera.CFrame.LookVector
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local root = player.Character.HumanoidRootPart
+            local distance = (root.Position - Camera.CFrame.Position).Magnitude
+            local direction = (root.Position - Camera.CFrame.Position).Unit
+            local dot = camLook:Dot(direction)
+
+            if distance < Config.Camlock.MaxDistance and dot > 0.97 and distance < shortestDist then
+                closest = root
+                shortestDist = distance
+            end
+        end
+    end
+    return closest
+end
+
+-- Create a Neon Prediction Dot (bright yellow)
+local predictionDot = Instance.new("Part")
+predictionDot.Size = Vector3.new(0.3, 0.3, 0.3)
+predictionDot.Shape = Enum.PartType.Ball
+predictionDot.Material = Enum.Material.Neon
+predictionDot.Color = Color3.fromRGB(255, 255, 0)  -- Bright yellow
+predictionDot.Anchored = true
+predictionDot.CanCollide = false
+predictionDot.Parent = workspace
+
+-- UI for Camlock
+local camlockGui = Instance.new("ScreenGui", game.CoreGui)
+camlockGui.ResetOnSpawn = false
+
+local camlockButton = Instance.new("TextButton", camlockGui)
+camlockButton.Size = UDim2.new(0, 100, 0, 100)
+camlockButton.Position = UDim2.new(0.85, 0, 0.2, 0)
+camlockButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+camlockButton.BackgroundTransparency = 0.7
+camlockButton.Text = "Z: Off"
+camlockButton.TextColor3 = Color3.fromRGB(255, 0, 0)
+camlockButton.Font = Enum.Font.GothamBold
+camlockButton.TextScaled = true
+camlockButton.Active = true
+camlockButton.Draggable = true
+camlockButton.BorderSizePixel = 3
+camlockButton.BorderColor3 = Color3.fromRGB(255, 255, 255)
+camlockButton.ZIndex = 10
+camlockButton.TextStrokeTransparency = 1
+
+local camlockCorner = Instance.new("UICorner", camlockButton)
+camlockCorner.CornerRadius = UDim.new(0, 50)
+
+camlockButton.MouseButton1Click:Connect(function()
+    if CamlockEnabled then
+        CamlockEnabled = false
+        LockTarget = nil
+        camlockButton.Text = "Z: Off"
+        camlockButton.TextColor3 = Color3.fromRGB(255, 0, 0)
+        -- Remove highlight from previous target if any
+        if currentTargetChar then
+            local hl = currentTargetChar:FindFirstChild("ZiedHighlight")
+            if hl then hl:Destroy() end
+            currentTargetChar = nil
+        end
+    else
+        LockTarget = GetTarget()
+        if LockTarget then
+            CamlockEnabled = true
+            camlockButton.Text = "Z: On"
+            camlockButton.TextColor3 = Color3.fromRGB(255, 255, 0)
+            -- Add a yellow Highlight to the targeted player's character
+            currentTargetChar = LockTarget.Parent
+            if currentTargetChar then
+                local hl = currentTargetChar:FindFirstChild("ZiedHighlight")
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "ZiedHighlight"
+                    hl.FillColor = Color3.fromRGB(255, 255, 0)
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 0)
+                    hl.Parent = currentTargetChar
+                end
+            end
+        end
+    end
+end)
+
+-- Camlock Update with XYZ Prediction
+RunService.RenderStepped:Connect(function()
+    if CamlockEnabled and LockTarget and LockTarget.Parent then
+        local predictedPosition = LockTarget.Position + Vector3.new(
+            LockTarget.Velocity.X * Config.Camlock.Prediction.X,
+            LockTarget.Velocity.Y * Config.Camlock.Prediction.Y,
+            LockTarget.Velocity.Z * Config.Camlock.Prediction.Z
+        )
+        local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, predictedPosition)
+        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Config.Camlock.Smoothness * 0.1)
+
+        predictionDot.Position = predictedPosition
+    else
+        predictionDot.Position = Vector3.new(0, -1000, 0)
+    end
+end)
+
+-- Auto Unlock on Player Death
+LocalPlayer.CharacterAdded:Connect(function(char)
+    local humanoid = char:FindFirstChild("Humanoid")
+    if humanoid then
+        humanoid.Died:Connect(function()
+            if Config.Camlock.AutoUnlock then
+                CamlockEnabled = false
+                LockTarget = nil
+                camlockButton.Text = "Z: Off"
+                camlockButton.TextColor3 = Color3.fromRGB(255, 0, 0)
+                if currentTargetChar then
+                    local hl = currentTargetChar:FindFirstChild("ZiedHighlight")
+                    if hl then hl:Destroy() end
+                    currentTargetChar = nil
+                end
+            end
+        end)
+    end
+end)
+
+--// MACRO SYSTEM \\--
+local function createMacroButton()
+    if game.Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("MacroScreenGui") then
+        return
+    end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    local Button = Instance.new("TextButton")
+
+    ScreenGui.Name = "MacroScreenGui"
+    ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.ResetOnSpawn = false
+
+    Button.Name = "Macro"
+    Button.Parent = ScreenGui
+    Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Button.BackgroundTransparency = 0.7
+    Button.Position = UDim2.new(0.05, 0, 0.5, 0)
+    Button.Size = UDim2.new(0, 120, 0, 120)
+    Button.Text = "MACRO [OFF]"
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 20
+    Button.TextColor3 = Color3.fromRGB(255, 0, 0)  -- Red when off
+    Button.BorderSizePixel = 2
+    Button.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Active = true
+    Button.Draggable = true
+    Button.ZIndex = 10
+    Button.TextStrokeTransparency = 1
+
+    local macroCorner = Instance.new("UICorner", Button)
+    macroCorner.CornerRadius = UDim.new(0, 60)
+
+    local isFacingForward = false
+
+    local function faceForward()
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        local currentPosition = humanoidRootPart.Position
+
+        local lookVector = Camera.CFrame.LookVector
+        local flatLookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+
+        local newCFrame = CFrame.new(currentPosition, currentPosition + flatLookVector)
+        humanoidRootPart.CFrame = newCFrame
+    end
+
+    local function loopFaceForward()
+        local connection
+        connection = RunService.RenderStepped:Connect(function()
+            if isFacingForward then
+                faceForward()
+            else
+                connection:Disconnect()
+            end
+        end)
+    end
+
+    Button.MouseButton1Click:Connect(function()
+        if Button.Text == "MACRO [OFF]" then
+            Button.Text = "MACRO [ON]"
+            Button.TextColor3 = Color3.fromRGB(0, 255, 0)
+            isFacingForward = true
+            loopFaceForward()
+        else
+            Button.Text = "MACRO [OFF]"
+            Button.TextColor3 = Color3.fromRGB(255, 0, 0)
+            isFacingForward = false
+        end
+    end)
+end
+
+createMacroButton()
+
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    camlockGui:Destroy()
+    loadingGui:Destroy()
+end)
+
+print("Zied V3 Camlock and Macro System with XYZ Prediction is Active!")
